@@ -3,9 +3,8 @@ Nils: "Nils_MQTT"
 Ehsan: "Ehsans_MQTT"
 
 Topic Struktur:
-projekt/werte/temperatur	$0.0
-projekt/werte/feuchte		§0.0
-projekt/LWT
+projekt/werte	{"temp": 0,"humi": 0,"ligh": 0}
+projekt/status	online/offline/LWT
 
 Keepalive:
 15sec

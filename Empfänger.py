@@ -27,7 +27,7 @@ tft.inversion_mode(True)
 tft.fill(st7789.BLACK)
 
 # --------Variablen definieren--------------
-header = "Empfaenger"
+status = "online"
 #Zeilen
 x1 = 0; y1 = 0; y2 = 32; y3 = 64; y4 = 96; y5 = 128
 temp=27.91
@@ -35,7 +35,7 @@ humi=80
 lux=4000
 uptime=59
 #-------Displayausgabe--------
-tft.text(font, f"Mode: {status}",						x1, y1, st7789.WHITE,  st7789.BLACK)
+tft.text(font, f"Stat: {status}",						x1, y1, st7789.WHITE,  st7789.BLACK)
 tft.text(font, f"Temp: {temp}C", 						x1, y2, st7789.YELLOW, st7789.BLACK)
 tft.text(font, f"Humi: {humi}%", 						x1, y3, st7789.CYAN,   st7789.BLACK)
 tft.text(font, f"Ligh: {lux}lux", 						x1, y4, st7789.YELLOW,   st7789.BLACK)
