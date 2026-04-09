@@ -1,0 +1,15 @@
+Client_IDs
+Nils: "Nils_MQTT"
+Ehsan: "Ehsans_MQTT"
+
+Topic Struktur:
+projekt/werte/temperatur	$0.0
+projekt/werte/feuchte		§0.0
+projekt/LWT
+
+Keepalive:
+15sec
+
+LWT:
+disconnected
+
