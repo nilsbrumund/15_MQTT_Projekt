@@ -17,10 +17,13 @@ BROKER_USER  = "NilsMQTT"
 BROKER_PW    = "passwort"
 TOPIC_WERTE  = "projekt/werte"
 TOPIC_STATUS = "projekt/status"
-# --- Datenvariablen ---
+# --- Globalvariablen ---
 data = {"temp": 0, "humi": 0, "ligh": 0}
-status = "offline"
+status = "OFFLINE"
+last_update = time.ticks_ms()
+last_ping = time.ticks_ms()
 start_time = time.ticks_ms()
+last_msg_time = time.ticks_ms()
 
 def wlan_verbinden(timeout=30):
     wlan = network.WLAN(network.STA_IF)
@@ -63,18 +66,19 @@ tft.fill(st7789.BLACK)
 x1 = 0
 y1, y2, y3, y4, y5 = 0, 32, 64, 96, 128
 
-def display_update(status, temp, humi, ligh, uptime):
+def display_update(status, temp, humi, ligh, uptime, since_last):
     tft.text(font, f"Status: {status}   ", x1, y1, st7789.WHITE,  st7789.BLACK)
     tft.text(font, f"Temp: {temp}C    ", x1, y2, st7789.YELLOW, st7789.BLACK)
     tft.text(font, f"Humi: {humi}%    ", x1, y3, st7789.CYAN,   st7789.BLACK)
     tft.text(font, f"Ligh: {ligh}lux  ", x1, y4, st7789.YELLOW, st7789.BLACK)
-    tft.text(font, f"Time: {uptime}s  ", x1, y5, st7789.WHITE,  st7789.BLACK)
+    tft.text(font, f"Time: {uptime}s Last: {since_last}s  ", x1, y5, st7789.WHITE,  st7789.BLACK)
 
 def on_message(topic, msg):
-    global data, status
+    global data, status, last_msg_time
     topic = topic.decode()
     msg   = msg.decode()
-
+    last_msg_time = time.ticks_ms()
+    
     if topic == TOPIC_WERTE:
         try:
             data = json.loads(msg)
@@ -85,49 +89,53 @@ def on_message(topic, msg):
     elif topic == TOPIC_STATUS:
         if msg == "online":
             status = "ONLINE"
-        elif msg == "disconnected":
-            status = "LWT"
+        elif msg == "offline":
+            status = "OFFLINE (LWT)"
         else:
-            status = "OFFLINE"
+            status = "UNKNOWN"
         print("Status:", status)
 
 def mqtt_connect():
     client = MQTTClient(CLIENT_ID, MQTT_SERVER, port=1883, user=BROKER_USER, password=BROKER_PW, keepalive=15)
     client.set_callback(on_message)
-    client.connect()
+    client.connect(clean_session=True)
     client.subscribe(TOPIC_WERTE)
     client.subscribe(TOPIC_STATUS)
     print("MQTT verbunden")
     return client
 
 client = mqtt_connect()
-display_update(status, 0, 0, 0, 0)
-last_update = time.ticks_ms()
-#--- Loop ---
+display_update(status, 0, 0, 0, 0, 0)
 
+#--- Loop ---
 while True:
     try:
-        client.check_msg()  
-        
+        client.check_msg()
+
         now = time.ticks_ms()
+        
+        #Ping für KA
+        if time.ticks_diff(now, last_ping) >= 10000:
+            client.ping()
+            last_ping = now
+            print("Ping gesendet")
+        #Display
         if time.ticks_diff(now, last_update) >= 1000:
             uptime = time.ticks_diff(now, start_time) // 1000
-            display_update(
-                status,
-                data["temp"],
-                data["humi"],
-                data["ligh"],
-                uptime
-                )
-            last_update = now   # Zeitstempel 
+            since_last = time.ticks_diff(now, last_msg_time) // 1000
+            display_update(status, data["temp"], data["humi"], data["ligh"], uptime, since_last)
+            last_update = now
 
     except OSError as e:
-        print("OSError Code:", e.args[0], e)
+        import sys
+        sys.print_exception(e)
         status = "OFFLINE"
         uptime = time.ticks_diff(time.ticks_ms(), start_time) // 1000
         display_update(status, 0, 0, 0, uptime)
-        time.sleep(2)
-        try:
-            client = mqtt_connect()
-        except Exception as e2:
-            print("Reconnect fehlgeschlagen:", e2)
+        client = None
+        while client is None:
+            time.sleep(5)
+            try:
+                client = mqtt_connect()
+            except Exception as e2:
+                print("Reconnect fehlgeschlagen:", e2)
