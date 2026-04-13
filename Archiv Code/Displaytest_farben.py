@@ -34,6 +34,7 @@ temp=27.91
 humi=80
 lux=4000
 uptime=59
+status="online"
 #-------Displayausgabe--------
 tft.text(font, f"Mode: {status}",						x1, y1, st7789.WHITE,  st7789.BLACK)
 tft.text(font, f"Temp: {temp}C", 						x1, y2, st7789.YELLOW, st7789.BLACK)
