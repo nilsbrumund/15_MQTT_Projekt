@@ -1,0 +1,110 @@
+from machine import SPI, Pin
+import machine
+import time
+import network
+import ujson
+from umqtt.simple import MQTTClient
+import ahtx0
+from bh1750 import BH1750
+import st7789py as st7789
+import vga2_16x32 as font
+
+
+# --- KONFIGURATION ---
+WIFI_SSID = "BZTG_local"
+WIFI_PASS = "Mittelsenkrechte64"
+MQTT_BROKER = "10.12.168.18" 
+MQTT_USER   = "NilsMQTT"
+MQTT_PASS   = "passwort"
+
+
+TOPIC_STATUS = "projekt/status"
+TOPIC_DATA   = "projekt/werte"
+
+# --- Display ---
+spi = SPI(2, baudrate=20000000, polarity=0, phase=0, sck=Pin(39), mosi=Pin(40))
+custom_rotations = (
+    (0x00, 170, 320, 35, 0, False),
+    (0x60, 320, 170, 0, 35, False),
+    (0xC0, 170, 320, 35, 0, False),
+    (0xA0, 320, 170, 0, 35, False),
+)
+tft = st7789.ST7789(
+    spi, 170, 320,
+    reset=Pin(37, Pin.OUT),
+    cs=Pin(38, Pin.OUT),
+    dc=Pin(41, Pin.OUT),
+    backlight=Pin(42, Pin.OUT),
+    custom_rotations=custom_rotations,
+    rotation=1,
+    color_order=st7789.BGR,
+)
+tft.inversion_mode(True)
+tft.fill(st7789.BLACK)
+
+# --- Displayausgabe ---
+x1 = 0
+y1, y2, y3, y4, y5 = 0, 32, 64, 96, 128
+
+def display_update(status, t, h, l):
+    tft.text(font, f"Status: {status}   ", x1, y1, st7789.WHITE,  st7789.BLACK)
+    tft.text(font, f"Temp: {t}C    ", x1, y2, st7789.YELLOW, st7789.BLACK)
+    tft.text(font, f"Humi: {h}%    ", x1, y3, st7789.CYAN,   st7789.BLACK)
+    tft.text(font, f"Ligh: {l}lux  ", x1, y4, st7789.YELLOW, st7789.BLACK)
+
+
+# --- HARDWARE ---
+# Pins bleiben: SCL=35, SDA=36
+i2c = machine.I2C(0, scl=machine.Pin(35), sda=machine.Pin(36), freq=10000)
+
+# Variablen global definieren, damit sie im Loop immer existieren
+sensor_aht = None
+sensor_bh  = None
+
+try:
+    # Explizit Adresse 0x38 für deinen Scan
+    sensor_aht = ahtx0.AHT10(i2c, address=0x38)
+    sensor_bh  = BH1750(0x23, i2c)
+    print("Sensoren erfolgreich initialisiert!")
+except Exception as e:
+    print("Initialisierungs-Fehler:", e)
+    # Programm läuft trotzdem weiter, sendet dann halt 0.0
+
+# --- NETZWERK & MQTT ---
+wlan = network.WLAN(network.STA_IF)
+wlan.active(True)
+wlan.connect(WIFI_SSID, WIFI_PASS)
+while not wlan.isconnected():
+    time.sleep(0.5)
+
+client = MQTTClient("_Sender", MQTT_BROKER, user=MQTT_USER, password=MQTT_PASS, keepalive=15)
+client.set_last_will(TOPIC_STATUS, "disconnected", retain=True)
+
+try:
+    client.connect()
+    client.publish(TOPIC_STATUS, "online", retain=True)
+    print("WLAN & MQTT bereit.")
+except:
+    print("MQTT Connect fehlgeschlagen.")
+
+# --- HAUPTSCHLEIFE ---
+while True:
+    try:
+        # Werte nur lesen, wenn Sensor-Objekt existiert
+        t = sensor_aht.temperature if sensor_aht else 0.0
+        h = sensor_aht.relative_humidity if sensor_aht else 0.0
+        l = sensor_bh.measurement if sensor_bh else 0.0
+        status = "online"
+        payload = ujson.dumps({"temp": round(t, 2), "humi": round(h, 2), "ligh": round(l, 2)})
+        print(f"Shell A -> Sende: {payload}")
+        
+        client.publish(TOPIC_DATA, payload)
+        
+        # Display Update
+        display_update(status, t, h, l)
+        
+        time.sleep(5)
+    except Exception as e:
+        print("Fehler im Loop:", e)
+        time.sleep(5)
+        machine.reset()

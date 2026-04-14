@@ -11,8 +11,8 @@ WLAN_SSID = "FRITZ!Box NB"
 WLAN_PASS = "46914294587536504239"
 """
 # --- MQTT ---
-MQTT_SERVER  = "10.12.19.154"
-CLIENT_ID    = "Nils_ESP2"
+MQTT_SERVER  = "10.12.168.18"
+CLIENT_ID    = "EHSAN"
 BROKER_USER  = "NilsMQTT"
 BROKER_PW    = "passwort"
 TOPIC_WERTE  = "projekt/werte"
@@ -52,9 +52,9 @@ custom_rotations = (
 tft = st7789.ST7789(
     spi, 170, 320,
     reset=Pin(37, Pin.OUT),
-    cs=Pin(35, Pin.OUT),
-    dc=Pin(36, Pin.OUT),
-    backlight=Pin(38, Pin.OUT),
+    cs=Pin(38, Pin.OUT),
+    dc=Pin(41, Pin.OUT),
+    backlight=Pin(42, Pin.OUT),
     custom_rotations=custom_rotations,
     rotation=1,
     color_order=st7789.BGR,

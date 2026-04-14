@@ -1,0 +1,128 @@
+from machine import SPI, Pin, I2C
+import machine
+import time
+import network
+import ujson
+from umqtt.simple import MQTTClient
+import ahtx0
+from bh1750 import BH1750
+import st7789py as st7789
+import vga2_16x32 as font
+
+# --- KONFIGURATION ---
+WIFI_SSID = "BZTG_local"
+WIFI_PASS = "Mittelsenkrechte64"
+MQTT_BROKER = "10.12.168.18" 
+MQTT_USER   = "NilsMQTT"
+MQTT_PASS   = "passwort"
+
+TOPIC_STATUS = "projekt/status"
+TOPIC_DATA   = "projekt/werte"
+
+# --- Display ---
+spi = SPI(2, baudrate=20000000, polarity=0, phase=0, sck=Pin(39), mosi=Pin(40))
+custom_rotations = (
+    (0x00, 170, 320, 35, 0, False),
+    (0x60, 320, 170, 0, 35, False),
+    (0xC0, 170, 320, 35, 0, False),
+    (0xA0, 320, 170, 0, 35, False),
+)
+tft = st7789.ST7789(
+    spi, 170, 320,
+    reset=Pin(37, Pin.OUT),
+    cs=Pin(38, Pin.OUT),
+    dc=Pin(41, Pin.OUT),
+    backlight=Pin(42, Pin.OUT),
+    custom_rotations=custom_rotations,
+    rotation=1,
+    color_order=st7789.BGR,
+)
+tft.inversion_mode(True)
+tft.fill(st7789.BLACK)
+
+# --- Displayausgabe ---
+x1 = 0
+y1, y2, y3, y4 = 0, 32, 64, 96
+
+def display_update(status, t, h, l):
+    tft.text(font, f"Status: {status}    ", x1, y1, st7789.WHITE,  st7789.BLACK)
+    tft.text(font, f"Temp: {t}C    ", x1, y2, st7789.YELLOW, st7789.BLACK)
+    tft.text(font, f"Humi: {h}%    ", x1, y3, st7789.CYAN,   st7789.BLACK)
+    tft.text(font, f"Ligh: {l}lux  ", x1, y4, st7789.YELLOW, st7789.BLACK)
+
+# --- HARDWARE ---
+i2c = I2C(0, scl=Pin(35), sda=Pin(36), freq=10000)
+
+sensor_aht = None
+sensor_bh  = None
+
+try:
+    sensor_aht = ahtx0.AHT10(i2c, address=0x38)
+    sensor_bh  = BH1750(0x23, i2c)
+    print("Sensoren erfolgreich initialisiert!")
+except Exception as e:
+    print("Initialisierungs-Fehler:", e)
+
+# --- NETZWERK & MQTT ---
+wlan = network.WLAN(network.STA_IF)
+wlan.active(True)
+wlan.connect(WIFI_SSID, WIFI_PASS)
+
+print("Verbinde mit WLAN...")
+while not wlan.isconnected():
+    time.sleep(0.5)
+print("WLAN verbunden:", wlan.ifconfig()[0])
+
+# MQTT Client erstellen
+# Client ID sollte eindeutig sein
+client = MQTTClient("ESP32_Sender_Nils", MQTT_BROKER, user=MQTT_USER, password=MQTT_PASS, keepalive=30)
+
+# --- WICHTIG: LAST WILL VOR DEM CONNECT ---
+# Wenn die Verbindung abbricht, sendet der Broker automatisch "offline"
+client.set_last_will(TOPIC_STATUS, "offline", retain=True)
+
+try:
+    client.connect()
+    # Nach erfolgreichem Connect "online" senden
+    client.publish(TOPIC_STATUS, "online", retain=True)
+    print("MQTT bereit und online-Status gesendet.")
+except Exception as e:
+    print("MQTT Connect fehlgeschlagen:", e)
+
+# --- HAUPTSCHLEIFE ---
+while True:
+    try:
+        # Sicherstellen, dass WLAN noch steht
+        if not wlan.isconnected():
+            print("WLAN verloren, Reset...")
+            machine.reset()
+
+        # Sensoren auslesen
+        t = sensor_aht.temperature if sensor_aht else 0.0
+        h = sensor_aht.relative_humidity if sensor_aht else 0.0
+        l = sensor_bh.measurement if sensor_bh else 0.0
+        
+        # Daten-Payload erstellen
+        payload = ujson.dumps({
+            "temp": round(t, 2), 
+            "humi": round(h, 2), 
+            "ligh": round(l, 2)
+        })
+        
+        # Daten senden
+        client.publish(TOPIC_DATA, payload)
+        
+        # Verbindung halten (Ping an Broker)
+        client.ping()
+        
+        # Display aktualisieren
+        display_update("online", round(t, 1), round(h, 1), int(l))
+        
+        print(f"Gesendet: {payload}")
+        time.sleep(5)
+        
+    except Exception as e:
+        print("Fehler im Loop:", e)
+        time.sleep(2)
+        # Bei Fehlern (z.B. Broker-Timeout) neu starten
+        machine.reset()
