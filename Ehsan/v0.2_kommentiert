@@ -1,0 +1,122 @@
+from machine import SPI, Pin, I2C # Importiert Hardware-Schnittstellen (SPI für Display, Pin für Kontakte, I2C für Sensoren)
+import machine                  # Importiert grundlegende Systemfunktionen (z.B. Reset)
+import time                     # Importiert Zeitfunktionen für Pausen (Sleep)
+import network                  # Importiert die WLAN-Funktionen
+import ujson                    # Importiert JSON-Formatierung (um Daten kompakt zu verpacken)
+from umqtt.simple import MQTTClient # Importiert den Protokoll-Client für den Datentransfer
+import ahtx0                    # Treiber für den Temperatur-/Feuchtigkeitssensor AHT10/20
+from bh1750 import BH1750       # Treiber für den Lichtintensitätssensor
+import st7789py as st7789       # Treiber für das Farbdisplay
+import vga2_16x32 as font       # Importiert eine Schriftart für das Display
+
+WIFI_SSID = "BZTG_local"        # Name deines WLANs
+WIFI_PASS = "Mittelsenkrechte64" # Passwort deines WLANs
+MQTT_BROKER = "10.12.168.18"    # IP-Adresse des MQTT-Servers (Broker)
+MQTT_USER   = "NilsMQTT"        # Benutzername für den MQTT-Server
+MQTT_PASS   = "passwort"        # Passwort für den MQTT-Server
+
+TOPIC_STATUS = "projekt/status" # Kanal, auf dem der Online-Status gesendet wird
+TOPIC_DATA   = "projekt/werte"  # Kanal, auf dem die Sensorwerte gesendet werden
+
+# Erstellt die SPI-Verbindung zum Display (Taktung, Pins für Datenübertragung)
+spi = SPI(2, baudrate=20000000, polarity=0, phase=0, sck=Pin(39), mosi=Pin(40))
+
+# Definiert, wie das Displaybild gedreht und verschoben wird (Display-spezifisch)
+custom_rotations = (
+    (0x00, 170, 320, 35, 0, False),
+    (0x60, 320, 170, 0, 35, False),
+    (0xC0, 170, 320, 35, 0, False),
+    (0xA0, 320, 170, 0, 35, False),
+)
+
+# Initialisiert das Display-Objekt mit den entsprechenden Pins
+tft = st7789.ST7789(
+    spi, 170, 320,
+    reset=Pin(37, Pin.OUT),     # Pin zum Zurücksetzen des Displays
+    cs=Pin(38, Pin.OUT),        # Chip Select (Aktivierung)
+    dc=Pin(41, Pin.OUT),        # Data/Command Auswahl
+    backlight=Pin(42, Pin.OUT), # Steuerung der Hintergrundbeleuchtung
+    custom_rotations=custom_rotations,
+    rotation=1,                 # Legt das Querformat fest
+    color_order=st7789.BGR,     # Farbreihenfolge (Blau-Grün-Rot)
+)
+tft.inversion_mode(True)        # Kehrt Farben um (oft nötig bei günstigen Displays)
+tft.fill(st7789.BLACK)          # Macht den Bildschirm komplett schwarz
+
+x1 = 0                          # Startposition links
+y1, y2, y3, y4 = 0, 32, 64, 96  # Vertikale Zeilenabstände (32 Pixel pro Zeile)
+
+def display_update(status, t, h, l):
+    # Schreibt Text in verschiedenen Farben auf das Display
+    tft.text(font, f"Status: {status}    ", x1, y1, st7789.WHITE,  st7789.BLACK)
+    tft.text(font, f"Temp: {t}C    ", x1, y2, st7789.YELLOW, st7789.BLACK)
+    tft.text(font, f"Humi: {h}%    ", x1, y3, st7789.CYAN,   st7789.BLACK)
+    tft.text(font, f"Ligh: {l}lux  ", x1, y4, st7789.YELLOW, st7789.BLACK)
+    
+# Initialisiert den I2C-Bus (Schnittstelle für die Sensoren)
+i2c = I2C(0, scl=Pin(35), sda=Pin(36), freq=10000)
+
+sensor_aht = None               # Platzhalter für den AHT-Sensor
+sensor_bh  = None               # Platzhalter für den BH1750-Sensor
+
+try:
+    sensor_aht = ahtx0.AHT10(i2c, address=0x38) # Sucht den AHT10 an Adresse 0x38
+    sensor_bh  = BH1750(0x23, i2c)              # Sucht den Lichtsensor an Adresse 0x23
+    print("Sensoren erfolgreich initialisiert!")
+except Exception as e:
+    print("Initialisierungs-Fehler:", e)        # Fehlermeldung, falls ein Sensor fehlt
+    
+wlan = network.WLAN(network.STA_IF) # Aktiviert den WLAN-Modus
+wlan.active(True)                   # Schaltet das WLAN-Modul ein
+wlan.connect(WIFI_SSID, WIFI_PASS)  # Startet den Verbindungsversuch
+
+print("Verbinde mit WLAN...")
+while not wlan.isconnected():       # Wartet, bis die Verbindung steht
+    time.sleep(0.5)
+print("WLAN verbunden:", wlan.ifconfig()[0]) # Zeigt die IP-Adresse des ESP32 an
+
+# Konfiguriert den MQTT-Client mit einer eindeutigen ID
+client = MQTTClient("ESP32_Sender_Nils", MQTT_BROKER, user=MQTT_USER, password=MQTT_PASS, keepalive=30)
+
+# Das "Testament": Wenn der ESP32 abstürzt, meldet der Server automatisch "offline"
+client.set_last_will(TOPIC_STATUS, "offline", retain=True)
+
+try:
+    client.connect()                # Verbindet mit dem MQTT-Server
+    client.publish(TOPIC_STATUS, "online", retain=True) # Meldet sich als "online"
+    print("MQTT bereit und online-Status gesendet.")
+except Exception as e:
+    print("MQTT Connect fehlgeschlagen:", e)
+    
+while True:                         # Endlosschleife
+    try:
+        if not wlan.isconnected():  # Prüft, ob WLAN noch da ist
+            print("WLAN verloren, Reset...")
+            machine.reset()         # Startet den ESP32 neu, falls WLAN weg ist
+
+        # Werte von den Sensoren abrufen (0.0 falls Sensor nicht bereit)
+        t = sensor_aht.temperature if sensor_aht else 0.0
+        h = sensor_aht.relative_humidity if sensor_aht else 0.0
+        l = sensor_bh.measurement if sensor_bh else 0.0
+        
+        # Verwandelt die Werte in eine JSON-Zeichenkette für den Versand
+        payload = ujson.dumps({
+            "temp": round(t, 2),    # Rundet auf 2 Nachkommastellen
+            "humi": round(h, 2), 
+            "ligh": round(l, 2)
+        })
+        
+        client.publish(TOPIC_DATA, payload) # Sendet die Daten an den Broker
+        client.ping()                       # Hält die MQTT-Verbindung aktiv
+        
+        # Schreibt die aktuellen Werte aufs Display
+        display_update("online", round(t, 1), round(h, 1), int(l))
+        
+        print(f"Gesendet: {payload}")
+        time.sleep(5)               # Wartet 5 Sekunden bis zur nächsten Messung
+        
+    except Exception as e:          # Falls ein Fehler auftritt (z.B. Verbindung weg)
+        print("Fehler im Loop:", e)
+        time.sleep(2)
+        machine.reset()             # Neustart bei Fehlern zur Sicherheit
+    

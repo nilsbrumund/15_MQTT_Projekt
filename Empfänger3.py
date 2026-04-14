@@ -34,7 +34,6 @@ status = "UNKNOWN"
 
 # Zeitmessung für Updates / Timeout / Anzeige
 last_update = time.ticks_ms()
-last_ping = time.ticks_ms()
 start_time = time.ticks_ms()
 last_msg_time = time.ticks_ms()
 
@@ -121,12 +120,14 @@ def display_update(status, temp, humi, ligh, uptime, since_last):
 
 def on_message(topic, msg):
     """
-    Wird automatisch vom im Loop aufgerufen, sobald eine Nachricht auf einem abonnierten Topic ankommt.
+    Wird automatisch im Loop aufgerufen, sobald eine Nachricht auf einem abonnierten Topic ankommt.
     """
     global data, status, last_msg_time
     # Byte zu String Konvertierung
     topic = topic.decode()
     msg = msg.decode()
+    #Leerzeichen etc entfernen
+    msg = msg.strip().lower()
 
     # Zeitstempel aktualisieren (letzte MQTT Nachricht)
     last_msg_time = time.ticks_ms()
@@ -143,7 +144,6 @@ def on_message(topic, msg):
             print("JSON Fehler:", e, msg)
 
     # Statusverarbeitung (LWT / Online Status)
-
     elif topic == TOPIC_STATUS:
         if msg == "online":
             status = "ONLINE"
@@ -155,7 +155,7 @@ def on_message(topic, msg):
         print("RAW STATUS:", repr(msg))
         print("Status:", status)
 
-# MQTT VERBINDUNG
+# MQTT VERBINDUNG Funktion
 
 def mqtt_connect():
     """
@@ -183,7 +183,7 @@ def mqtt_connect():
     print("MQTT verbunden")
     return client
 
-# RECONNECT FUNKTION
+# RECONNECT Funktion
 
 def reconnect():
     """
@@ -208,7 +208,7 @@ display_update(status, 0, 0, 0, 0, 0)
 
 while True:
     try:
-        # MQTT Verbindung prüfen
+        # MQTT Verbindung prüfen, bei fehlender Verbindung reconnect aufrufen
         if client is None:
             reconnect()
             time.sleep(2)
