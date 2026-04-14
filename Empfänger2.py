@@ -4,14 +4,14 @@ from umqtt.simple import MQTTClient
 import st7789py as st7789
 import vga2_16x32 as font
 # --- WLAN ---
-"""
 WLAN_SSID = "BZTG_local"
 WLAN_PASS = "Mittelsenkrechte64"
 """
 WLAN_SSID = "FRITZ!Box NB"
 WLAN_PASS = "46914294587536504239"
+"""
 # --- MQTT ---
-MQTT_SERVER  = "192.168.178.23"
+MQTT_SERVER  = " 10.12.19.154"
 CLIENT_ID    = "Nils_ESP2"
 BROKER_USER  = "NilsMQTT"
 BROKER_PW    = "passwort"
@@ -40,7 +40,7 @@ def wlan_verbinden(timeout=30):
     raise RuntimeError("Verbindungsaufbau WLAN fehlgeschlagen")
 
 wlan_verbinden()
-
+"""
 # --- Display ---
 spi = SPI(2, baudrate=20000000, polarity=0, phase=0, sck=Pin(39), mosi=Pin(40))
 custom_rotations = (
@@ -65,7 +65,7 @@ tft.fill(st7789.BLACK)
 # --- Displayausgabe ---
 x1 = 0
 y1, y2, y3, y4, y5 = 0, 32, 64, 96, 128
-
+"""
 def display_update(status, temp, humi, ligh, uptime, since_last):
     tft.text(font, f"Status: {status}   ", x1, y1, st7789.WHITE,  st7789.BLACK)
     tft.text(font, f"Temp: {temp}C    ", x1, y2, st7789.YELLOW, st7789.BLACK)

@@ -9,25 +9,25 @@ from bh1750 import BH1750
 # --- KONFIGURATION ---
 WIFI_SSID = "BZTG_local"
 WIFI_PASS = "Mittelsenkrechte64"
-MQTT_BROKER = "10.12.168.36" 
+MQTT_BROKER = "10.12.168.18" 
 MQTT_USER   = "NilsMQTT"
 MQTT_PASS   = "passwort"
-TEAM_ID     = "Nils_Ehsan"
 
-TOPIC_STATUS = f"projektesp/{TEAM_ID}/status"
-TOPIC_DATA   = f"projektesp/{TEAM_ID}/data"
+
+TOPIC_STATUS = "projekt/status"
+TOPIC_DATA   = "projekt/werte"
 
 # --- HARDWARE ---
-# Pins bleiben: SCL=36, SDA=35
-i2c = machine.I2C(0, scl=machine.Pin(36), sda=machine.Pin(35), freq=10000)
+# Pins bleiben: SCL=35, SDA=36
+i2c = machine.I2C(0, scl=machine.Pin(35), sda=machine.Pin(36), freq=10000)
 
 # Variablen global definieren, damit sie im Loop immer existieren
 sensor_aht = None
 sensor_bh  = None
 
 try:
-    # Explizit Adresse 0x77 für deinen Scan
-    sensor_aht = ahtx0.AHT10(i2c, address=0x77)
+    # Explizit Adresse 0x38 für deinen Scan
+    sensor_aht = ahtx0.AHT10(i2c, address=0x38)
     sensor_bh  = BH1750(0x23, i2c)
     print("Sensoren erfolgreich initialisiert!")
 except Exception as e:
@@ -41,8 +41,8 @@ wlan.connect(WIFI_SSID, WIFI_PASS)
 while not wlan.isconnected():
     time.sleep(0.5)
 
-client = MQTTClient(TEAM_ID + "_Sender", MQTT_BROKER, user=MQTT_USER, password=MQTT_PASS, keepalive=20)
-client.set_last_will(TOPIC_STATUS, "offline", retain=True)
+client = MQTTClient("_Sender", MQTT_BROKER, user=MQTT_USER, password=MQTT_PASS, keepalive=15)
+client.set_last_will(TOPIC_STATUS, "disconnected", retain=True)
 
 try:
     client.connect()
@@ -61,8 +61,8 @@ while True:
         
         payload = ujson.dumps({
             "temp": round(t, 2),
-            "hum": round(h, 2),
-            "lux": round(l, 2)
+            "humi": round(h, 2),
+            "ligh": round(l, 2)
         })
         
         client.publish(TOPIC_DATA, payload)
